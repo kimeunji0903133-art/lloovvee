@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>전연인 시뮬레이터 - 현실 실사 게임형</title>
+<style>
+  :root{
+    --bg:#fff6fb;
+    --card:rgba(255,255,255,0.85);
+    --primary:#ff6fa3;
+    --muted:#8b6b6b;
+    --radius:16px;
+    --glass: rgba(255,255,255,0.65);
+    font-family: "Noto Sans KR","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#fff6fb,#fff0f3);color:#222}
+  .container{max-width:1000px;margin:18px auto;padding:12px;display:grid;grid-template-columns:1fr 320px;gap:14px;}
+  @media(max-width:920px){.container{grid-template-columns:1fr} .sidebar{order:2}}
+  header{grid-column:1/-1;display:flex;align-items:center;gap:12px}
+  header h1{margin:0;font-size:1.4rem;color:var(--primary)}
+  .game-area{position:relative;border-radius:20px;overflow:hidden;height:640px;box-shadow:0 12px 30px rgba(20,10,30,0.12)}
+  .bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:brightness(0.85) saturate(0.96);}
+  .overlay{position:absolute;inset:0;background:linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.25));}
+  .ui {position:absolute;inset:18px;display:flex;gap:12px;align-items:flex-end;pointer-events:none;padding-bottom:22px}
+  .left-column{flex:1;display:flex;flex-direction:column;gap:12px;pointer-events:auto}
+  .card{background:var(--card);backdrop-filter: blur(6px);border-radius:14px;padding:12px;box-shadow:0 8px 22px rgba(10,10,20,0.08)}
+  .chat{height:340px;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+  .npc-msg, .player-msg{max-width:78%;padding:10px 12px;border-radius:12px;display:flex;gap:10px;align-items:center}
+  .npc-msg{background:rgba(255,255,255,0.95);color:#222;align-self:flex-start}
+  .player-msg{background:linear-gradient(90deg,var(--primary),#ff8abb);color:#fff;align-self:flex-end}
+  .npc-msg img{width:48px;height:48px;border-radius:50%;object-fit:cover}
+  .choices{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .choices button{pointer-events:auto;border:none;padding:10px 12px;border-radius:10px;background:#fff;cursor:pointer;text-align:left;font-weight:600}
+  .choices button.extreme{background:linear-gradient(90deg,#ffe6ef,#ffb6d0);color:#300}
+  .choices button.calm{background:linear-gradient(90deg,#f0f7ff,#dff0ff)}
+  .stage{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .stats{display:flex;flex-direction:column;gap:8px}
+  .stat-row{display:flex;align-items:center;gap:8px;font-size:0.9rem}
+  .bar{height:10px;background:#eee;border-radius:999px;flex:1;overflow:hidden}
+  .fill{height:100%;border-radius:999px;transition:width 0.35s}
+  .love{background:linear-gradient(90deg,#ffd6e9,#ff6fa3)}
+  .anger{background:linear-gradient(90deg,#ffdcb3,#ff7b4b)}
+  .sad{background:linear-gradient(90deg,#dbeaff,#7aa7ff)}
+  .right-panel{display:flex;flex-direction:column;gap:12px;pointer-events:auto}
+  .progress{height:12px;background:rgba(255,255,255,0.6);border-radius:10px;overflow:hidden}
+  .progress > i{display:block;height:100%;background:linear-gradient(90deg,#ffd6e9,#ffd6e9);width:0%}
+  footer{grid-column:1/-1;text-align:center;font-size:0.85rem;color:var(--muted);margin-top:6px}
+  .top-controls{display:flex;gap:8px;align-items:center}
+  .btn{padding:8px 12px;border-radius:10px;border:none;background:var(--primary);color:#fff;cursor:pointer}
+  .small{font-size:0.85rem;padding:6px 8px}
+  .ending-screen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.55));color:#fff;z-index:40}
+  .ending-card{background:rgba(255,255,255,0.06);padding:22px;border-radius:14px;text-align:center;max-width:520px}
+  .download-btn{background:#fff;color:#333;padding:10px 14px;border-radius:10px;margin-top:10px}
+  /* responsive tweaks */
+  @media(max-width:520px){
+    .game-area{height:76vh}
+    .chat{height:220px}
+    .npc-msg img{width:40px;height:40px}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>전연인 시뮬레이터 — 현실 실사 게임형</h1>
+    <div style="flex:1"></div>
+    <div class="top-controls">
+      <button class="btn small" id="saveBtn">저장</button>
+      <button class="btn small" id="restartBtn">처음부터</button>
+    </div>
+  </header>
+
+  <div class="game-area card" id="game">
+    <div class="bg" id="bg"></div>
+    <div class="overlay"></div>
+
+    <div class="ui">
+      <div class="left-column">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong id="sceneTitle">Scene</strong>
+            <div style="font-size:0.85rem;color:var(--muted)" id="sceneInfo">Stage 1 / 15</div>
+          </div>
+          <div class="chat" id="chat"></div>
+        </div>
+
+        <div class="card">
+          <div id="choices"></div>
+        </div>
+      </div>
+
+      <aside class="right-panel">
+        <div class="card stats">
+          <div class="stat-row"><strong>감정 상태</strong></div>
+          <div class="stat-row"><span>💗 사랑</span><div class="bar"><div id="loveBar" class="fill love" style="width:50%"></div></div></div>
+          <div class="stat-row"><span>💢 분노</span><div class="bar"><div id="angerBar" class="fill anger" style="width:20%"></div></div></div>
+          <div class="stat-row"><span>💧 슬픔</span><div class="bar"><div id="sadBar" class="fill sad" style="width:30%"></div></div></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong>진행</strong>
+            <span id="stageText" style="color:var(--muted)">0 / 0</span>
+          </div>
+          <div class="progress" style="margin-top:8px;"><i id="progressFill" style="width:0%"></i></div>
+          <div style="margin-top:10px;text-align:center">
+            <button class="btn small" id="autoPlay">자동 진행</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <strong>메모</strong>
+          <div style="font-size:0.9rem;color:var(--muted);margin-top:6px">결과는 다운로드하여 제출/보관할 수 있습니다.</div>
+          <div style="margin-top:10px;display:flex;gap:6px">
+            <button class="btn small" id="downloadBtn">결과 다운로드</button>
+            <button class="btn small" id="clearBtn" style="background:#aaa">저장 취소</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <footer>제작: 전연인 시뮬레이터 — 현실 실사 버전 · 교육용 / 시범용</footer>
+</div>
+
+<!-- 엔딩 모달 -->
+<div id="ending" class="ending-screen" style="display:none">
+  <div class="ending-card">
+    <h2 id="endingTitle">엔딩</h2>
+    <p id="endingDesc"></p>
+    <div style="margin-top:12px">
+      <button id="restart2" class="btn">처음부터 다시하기</button>
+      <button id="download2" class="download-btn">일기 다운로드</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================
+   DATA: scenes (15+) with real-photo backgrounds
+   - 각 장면은: title, text, bg (실사 이미지), npc (사람 얼굴 이미지), choices[]
+   - choice: {text, effect: {love, anger, sad}, type: 'extreme'|'calm'|'neutral'}
+   ============================ */
+const scenes = [
+  {title:"우연한 연락", text:"오랜만이야. 갑자기 생각나서 연락했어.", bg:"https://images.unsplash.com/photo-1503264116251-35a269479413?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"반가워! 잘 지냈어?", effect:{love:8,anger:-4,sad:-2}, type:"calm"},
+    {text:"왜 이제 와서...?", effect:{love:-6,anger:6,sad:2}, type:"extreme"},
+    {text:"(묵묵히 무시한다)", effect:{love:-4,anger:2,sad:4}, type:"neutral"}
+  ]},
+  {title:"추억 소환", text:"지난번 우리 같이 갔던 카페 사진 봤어?", bg:"https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"그때 좋았지. 웃었네.", effect:{love:6,anger:-2,sad:-3}, type:"calm"},
+    {text:"그 사진 지워줘.", effect:{love:-8,anger:8,sad:4}, type:"extreme"},
+    {text:"사진은 그냥 추억이지.", effect:{love:2,anger:0,sad:-1}, type:"neutral"}
+  ]},
+  {title:"갑작스런 약속", text:"주말에 잠깐 볼래? 얘기 좀 하고 싶어.", bg:"https://images.unsplash.com/photo-1508923567004-3a6b8004f3d1?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1531123414780-fc3e6b8da0c9?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"좋아, 만나자.", effect:{love:10,anger:-3,sad:-5}, type:"calm"},
+    {text:"아니, 아직은 무리야.", effect:{love:-6,anger:2,sad:6}, type:"neutral"},
+    {text:"왜 자꾸 연락해? 지긋지긋해.", effect:{love:-12,anger:12,sad:8}, type:"extreme"}
+  ]},
+  {title:"솔직한 고백", text:"그동안 뭔가 잘못했던 것 같아. 미안해.", bg:"https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1545996124-1b5e9b1b7a2c?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"사실 나도 미안한 점 있어.", effect:{love:8,anger:-3,sad:-2}, type:"calm"},
+    {text:"이제 와서 무슨 소용이야.", effect:{love:-10,anger:8,sad:6}, type:"extreme"},
+    {text:"시간을 갖자. 천천히 이야기하자.", effect:{love:2,anger:-1,sad:1}, type:"neutral"}
+  ]},
+  {title:"새 연애 루머", text:"혹시 너 내 SNS에 새 사람 있던데?", bg:"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1544006659-f0b21884ce1d?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"그건 오해야. 설명할게.", effect:{love:4,anger:-2,sad:-2}, type:"calm"},
+    {text:"그래, 너는 어떻게 생각하든 신경 안써.", effect:{love:-2,anger:4,sad:6}, type:"neutral"},
+    {text:"거짓말 하지마. 배신감 들어.", effect:{love:-12,anger:14,sad:6}, type:"extreme"}
+  ]},
+  {title:"약속 파기", text:"그날 네가 안 와서 많이 상처받았어.", bg:"https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"그땐 정말 사정이 있었어. 미안.", effect:{love:6,anger:-3,sad:-2}, type:"calm"},
+    {text:"그런 일로 감정 소모하지마.", effect:{love:-4,anger:2,sad:4}, type:"neutral"},
+    {text:"네가 과민반응이야. 감정 조절해.", effect:{love:-10,anger:10,sad:6}, type:"extreme"}
+  ]},
+  {title:"갑자기 들이댐", text:"오늘 우연히 보니까 네가 너무 예뻐 보였어.", bg:"https://images.unsplash.com/photo-1519331379826-2929d1fbdc1b?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1545996124-1b5e9b1b7a2c?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"고마워. 너도 잘 지내.", effect:{love:6,anger:-1,sad:-1}, type:"calm"},
+    {text:"그런 말 갑자기 왜 해?", effect:{love:-2,anger:2,sad:2}, type:"neutral"},
+    {text:"그만 좀 해. 불편해.", effect:{love:-8,anger:8,sad:4}, type:"extreme"}
+  ]},
+  {title:"깊은 대화", text:"서로 솔직해질 수 있을까? 네 감정이 궁금해.", bg:"https://images.unsplash.com/photo-1503264116251-35a269479413?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"난 아직 널 좋아해.", effect:{love:12,anger:-4,sad:-6}, type:"calm"},
+    {text:"좋아했지만 이제 끝.", effect:{love:-8,anger:4,sad:10}, type:"neutral"},
+    {text:"다신 그런 말 하지마.", effect:{love:-14,anger:12,sad:8}, type:"extreme"}
+  ]},
+  {title:"오해의 증폭", text:"친구들이 네 얘기하더라. 상처받았어.", bg:"https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"그런 얘긴 무슨... 오해야.", effect:{love:4,anger:-2,sad:-2}, type:"calm"},
+    {text:"그만 좀 해. 더 이상 못 참아.", effect:{love:-10,anger:12,sad:6}, type:"extreme"},
+    {text:"증거 보여줘. 말로 못 믿겠어.", effect:{love:-2,anger:4,sad:2}, type:"neutral"}
+  ]},
+  {title:"밤의 고백", text:"달이 예뻐서 너 생각났어...", bg:"https://images.unsplash.com/photo-1504198453319-5ce911bafcde?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"나도 네 생각 자주 해.", effect:{love:10,anger:-3,sad:-4}, type:"calm"},
+    {text:"이런 말로 다시 혼란스럽게 하지마.", effect:{love:-8,anger:6,sad:6}, type:"extreme"},
+    {text:"그때로 돌아갈 수 있을까?", effect:{love:4,anger:-1,sad:2}, type:"neutral"}
+  ]},
+  {title:"서로의 변화", text:"우린 많이 달라졌어. 너는 어때?", bg:"https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1544006659-f0b21884ce1d?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"서로 더 성숙해진 것 같아.", effect:{love:6,anger:-2,sad:-1}, type:"calm"},
+    {text:"변한 건 네가 더 변한 것 같아.", effect:{love:-6,anger:6,sad:4}, type:"neutral"},
+    {text:"다시는 연결되지 않았으면 해.", effect:{love:-12,anger:8,sad:10}, type:"extreme"}
+  ]},
+  {title:"응급 상황", text:"급한 일이 생겼어, 도와줄 수 있어?", bg:"https://images.unsplash.com/photo-1508830524289-0adcbe822b40?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1531123414780-fc3e6b8da0c9?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"당연히 도와줄게.", effect:{love:8,anger:-3,sad:-2}, type:"calm"},
+    {text:"지금은 내가 힘들어.", effect:{love:-4,anger:2,sad:6}, type:"neutral"},
+    {text:"그런 건 내 문제가 아니야.", effect:{love:-12,anger:10,sad:6}, type:"extreme"}
+  ]},
+  {title:"결정의 순간", text:"우리 이대로 친구로 지낼래, 아니면...?", bg:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1545996124-1b5e9b1b7a2c?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"친구로 지내자. 천천히.", effect:{love:4,anger:-2,sad:1}, type:"calm"},
+    {text:"다시 시작해보고 싶어.", effect:{love:14,anger:-4,sad:-6}, type:"calm"},
+    {text:"끝내자. 완전히.", effect:{love:-14,anger:8,sad:8}, type:"extreme"}
+  ]},
+  {title:"마지막 메시지", text:"마지막으로 해두고 싶은 말이 있어.", bg:"https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?auto=format&fit=crop&w=1400&q=80", npc:"https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80", choices:[
+    {text:"난 네가 행복하길 바랄게.", effect:{love:10,anger:-4,sad:-3}, type:"calm"},
+    {text:"그럴 시간이 지났다.", effect:{love:-6,anger:6,sad:6}, type:"neutral"},
+    {text:"안녕. 다시 보지 말자.", effect:{love:-12,anger:8,sad:10}, type:"extreme"}
+  ]}
+];
+
+// 상태
+let state = {
+  idx: 0,
+  love: 50, anger: 10, sad: 20,
+  history: []
+};
+
+const maxStages = scenes.length;
+
+/* DOM */
+const bg = document.getElementById('bg');
+const chat = document.getElementById('chat');
+const choices = document.getElementById('choices');
+const sceneTitle = document.getElementById('sceneTitle');
+const sceneInfo = document.getElementById('sceneInfo');
+const loveBar = document.getElementById('loveBar');
+const angerBar = document.getElementById('angerBar');
+const sadBar = document.getElementById('sadBar');
+const progressFill = document.getElementById('progressFill');
+const stageText = document.getElementById('stageText');
+const endingEl = document.getElementById('ending');
+const endingTitle = document.getElementById('endingTitle');
+const endingDesc = document.getElementById('endingDesc');
+
+const autoBtn = document.getElementById('autoPlay');
+let autoPlayTimer = null;
+
+/* 저장/로드 */
+function saveState(){
+  localStorage.setItem('exsim_state', JSON.stringify(state));
+  alert('진행 상태가 저장되었습니다.');
+}
+function loadState(){
+  const s = localStorage.getItem('exsim_state');
+  if(s){ state = JSON.parse(s); return true; } 
+  return false;
+}
+function clearState(){
+  localStorage.removeItem('exsim_state');
+  alert('저장된 상태를 초기화했습니다.');
+}
+
+/* UI 업데이트 */
+function updateUI(){
+  const sc = scenes[state.idx];
+  bg.style.backgroundImage = `url('${sc.bg}')`;
+  sceneTitle.textContent = sc.title;
+  sceneInfo.textContent = `Stage ${state.idx+1} / ${maxStages}`;
+  stageText.textContent = `${state.idx+1} / ${maxStages}`;
+  loveBar.style.width = clamp(state.love,0,100) + '%';
+  angerBar.style.width = clamp(state.anger,0,100) + '%';
+  sadBar.style.width = clamp(state.sad,0,100) + '%';
+  progressFill.style.width = Math.round(((state.idx)/ (maxStages)) * 100) + '%';
+}
+
+/* show scene */
+function renderScene(){
+  updateUI();
+  chat.innerHTML = '';
+  // show NPC message
+  const sc = scenes[state.idx];
+  appendNpc(sc.npc, sc.text);
+  // render choices
+  choices.innerHTML = '';
+  sc.choices.forEach((c, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = c.text;
+    btn.className = c.type === 'extreme' ? 'extreme' : (c.type==='calm' ? 'calm' : '');
+    btn.onclick = () => { applyChoice(c) };
+    choices.appendChild(btn);
+  });
+}
+
+/* append functions */
+function appendNpc(imgUrl, text){
+  const div = document.createElement('div');
+  div.className = 'npc-msg';
+  const img = document.createElement('img'); img.src = imgUrl + '&q=60';
+  const span = document.createElement('div'); span.textContent = text;
+  div.appendChild(img); div.appendChild(span);
+  chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+}
+function appendPlayer(text){
+  const div = document.createElement('div');
+  div.className = 'player-msg';
+  div.textContent = text;
+  chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+}
+
+/* apply choice */
+function applyChoice(choice){
+  // update emotions
+  state.love = state.love + (choice.effect.love || 0);
+  state.anger = state.anger + (choice.effect.anger || 0);
+  state.sad = state.sad + (choice.effect.sad || 0);
+  // clamp
+  state.love = clamp(state.love, 0, 150);
+  state.anger = clamp(state.anger, 0, 150);
+  state.sad = clamp(state.sad, 0, 150);
+  // record
+  state.history.push({
+    idx: state.idx,
+    scene: scenes[state.idx].title,
+    choice: choice.text,
+    emotions: {love: state.love, anger: state.anger, sad: state.sad}
+  });
+  appendPlayer(choice.text);
+  // advance
+  state.idx++;
+  if(state.idx >= maxStages){
+    setTimeout(()=> showEnding(), 700);
+  } else {
+    setTimeout(()=> renderScene(), 600);
+  }
+}
+
+/* ending logic */
+function showEnding(){
+  // Decide ending by weighted emotions
+  // Happy: love significantly higher than sadness & anger
+  // Cold: anger high
+  // Tear: sad high
+  const L = state.love, A = state.anger, S = state.sad;
+  let title='', desc='';
+  if(L >= S + 20 && L >= A - 5){
+    title = '해피 엔딩 💗';
+    desc = '서로의 감정을 다시 보듬고 따뜻한 관계로 나아갑니다. 성장과 화해의 시간.';
+  } else if(A >= Math.max(L, S) && A > 35){
+    title = '냉정 엔딩 ❄️';
+    desc = '분노와 거리감이 쌓여 관계는 정리됩니다. 감정의 결말은 차갑습니다.';
+  } else if(S >= Math.max(L, A) && S > 40){
+    title = '눈물 엔딩 💧';
+    desc = '상처가 깊어 눈물로 마무리됩니다. 아픈 시간이지만 결국은 회복을 위한 한 걸음.';
+  } else {
+    title = '여운 엔딩 🌙';
+    desc = '감정의 결이 복잡하게 남았습니다. 당신은 앞으로를 향해 한 발을 내딛습니다.';
+  }
+  endingTitle.textContent = title;
+  endingDesc.textContent = `${desc}\n\n최종 감정치 — 사랑: ${L}, 분노: ${A}, 슬픔: ${S}`;
+  endingEl.style.display = 'flex';
+  // stop autoplay if any
+  stopAuto();
+}
+
+/* helpers */
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+/* download result as text file (일기형) */
+function downloadResult(){
+  const lines = [];
+  lines.push('전연인 시뮬레이터 — 결과 일기');
+  lines.push('---------------------------------');
+  lines.push(`날짜: ${new Date().toLocaleString()}`);
+  lines.push(`최종 스테이지: ${Math.min(state.idx, maxStages)}/${maxStages}`);
+  lines.push(`최종 감정치: 사랑 ${state.love}, 분노 ${state.anger}, 슬픔 ${state.sad}`);
+  lines.push('');
+  lines.push('선택 기록:');
+  state.history.forEach((h, i) => {
+    lines.push(`${i+1}. [${h.scene}] -> ${h.choice} (love:${h.emotions.love}, anger:${h.emotions.anger}, sad:${h.emotions.sad})`);
+  });
+  const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'exsim_result.txt'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
+/* autoplay */
+function startAuto(){
+  if(autoPlayTimer) return;
+  autoBtn.textContent = '자동 중지';
+  autoPlayTimer = setInterval(()=>{
+    // pick the calm choice if love high, else extreme neutral/random
+    const sc = scenes[state.idx];
+    if(!sc) { stopAuto(); return; }
+    // heuristic: if love is high, prefer calm; if anger high, prefer extreme to resolve; else random
+    let pickIdx = 0;
+    if(state.love > 70){
+      pickIdx = sc.choices.findIndex(c=>c.type==='calm'); if(pickIdx<0) pickIdx = 0;
+    } else if(state.anger > 40){
+      pickIdx = sc.choices.findIndex(c=>c.type==='extreme'); if(pickIdx<0) pickIdx = Math.floor(Math.random()*sc.choices.length);
+    } else {
+      pickIdx = Math.floor(Math.random()*sc.choices.length);
+    }
+    applyChoice(sc.choices[pickIdx]);
+    if(state.idx >= maxStages) stopAuto();
+  }, 900);
+}
+function stopAuto(){ if(autoPlayTimer){ clearInterval(autoPlayTimer); autoPlayTimer=null; autoBtn.textContent='자동 진행'; } }
+
+/* event bindings */
+document.getElementById('saveBtn').onclick = saveState;
+document.getElementById('restartBtn').onclick = () => { if(confirm('처음부터 다시 시작할래요? 저장된 상태는 지워집니다.')) { state = {idx:0,love:50,anger:10,sad:20,history:[]}; localStorage.removeItem('exsim_state'); renderScene(); endingEl.style.display='none'; } };
+document.getElementById('downloadBtn').onclick = downloadResult;
+document.getElementById('clearBtn').onclick = () => { if(confirm('저장된 진행을 삭제하시겠어요?')) { clearState(); } };
+document.getElementById('autoPlay').onclick = ()=>{ if(autoPlayTimer) stopAuto(); else startAuto(); };
+document.getElementById('restart2').onclick = ()=>{ endingEl.style.display='none'; state = {idx:0,love:50,anger:10,sad:20,history:[]}; localStorage.removeItem('exsim_state'); renderScene(); };
+document.getElementById('download2').onclick = ()=>{ downloadResult(); };
+
+window.addEventListener('load', ()=>{
+  // try load saved state
+  const loaded = loadState();
+  if(loaded){
+    if(confirm('저장된 진행을 불러올게요. 이어서 하시겠어요?')) {
+      renderScene(); return;
+    } else {
+      localStorage.removeItem('exsim_state');
+      state = {idx:0,love:50,anger:10,sad:20,history:[]};
+    }
+  }
+  renderScene();
+});
+
+/* before unload save automatically */
+window.addEventListener('beforeunload', ()=>{ localStorage.setItem('exsim_state', JSON.stringify(state)); });
+</script>
+</body>
+</html>
